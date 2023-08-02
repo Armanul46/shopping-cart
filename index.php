@@ -1,84 +1,106 @@
 <?php 
-include 'config.php';
+
+require_once 'config.php';
+require_once 'helpers.php';
+require_once 'partials/header.php'; 
 session_start();
 
-$user_id = $_SESSION['user_id'];
+$user_id     = $_SESSION['user_id'];
 $grand_total = 0;
+$message     = [];
+$connection  = database_connection();
+
 if( ! isset( $user_id ) ) {
-   header('location:login.php');
+   redirect( 'pages/login.php' );
 }
+
 if( isset( $_GET['logout'] ) ) {
-   unset( $_GET['logout'] );
-   session_destroy();
-   header('location:login.php');
+   user_logout( $_GET['logout'] );
+   redirect( 'pages/login.php' );
 }
 
 if( isset( $_POST['add_to_cart'] ) ) {
-   $product_quantity = ! empty( $_POST['product_quantity'] ) ? $_POST['product_quantity'] : 0;
-   $product_name     = ! empty( $_POST['product_name'] ) ? $_POST['product_name'] : '';
-   $product_price    = ! empty( $_POST['product_price'] ) ? $_POST['product_price'] : '';
-   $product_image    = ! empty( $_POST['product_image'] ) ? $_POST['product_image'] : '';
+   $product_quantity = empty_check( $_POST['product_quantity'], 0 );
+   $product_name     = empty_check( $_POST['product_name'], '' );
+   $product_price    = empty_check( $_POST['product_price'], 0 );
+   $product_image    = empty_check( $_POST['product_image'], '' );
 
-   $select_cart = mysqli_query( $conn, "SELECT * FROM cart WHERE name = '$product_name' AND user_id = '$user_id'");
+   $select_cart = mysqli_prepare( $connection, "SELECT * FROM cart WHERE name = ? AND user_id = ?" );
 
-   if ( mysqli_num_rows( $select_cart ) > 0 ) {
+   mysqli_stmt_bind_param( $select_cart, 'si', $product_name, $user_id );
+   mysqli_stmt_execute( $select_cart );
+   mysqli_stmt_execute( $select_cart );
+
+   $result_select_cart = mysqli_stmt_get_result( $select_cart );
+
+   if ( mysqli_num_rows( $result_select_cart ) > 0 ) {
       $message[] = 'product already added to cart';
+      mysqli_stmt_close( $select_cart );
    } else {
-      mysqli_query( $conn, "INSERT INTO cart(user_id, name, price, image, quantity) VALUES('$user_id', '$product_name', '$product_price', '$product_image', '$product_quantity')");
-      $message[] = 'product added to cart';
+      
+      $cart_insert = mysqli_prepare( $connection, "INSERT INTO cart( user_id, name, price, image, quantity ) VALUES( ?, ?, ?, ?, ? )" );
+      mysqli_stmt_bind_param( $cart_insert, 'isdsi', $user_id, $product_name, $product_price, $product_image, $product_quantity );
+      
+      if ( mysqli_stmt_execute( $cart_insert ) ) {
+         $message[] = 'product added to cart';
+      }
+
+      mysqli_stmt_close( $cart_insert );
    }
 }
 
 if( isset( $_POST['update_cart'] ) ) {
-   $update_quantity = ! empty( $_POST['cart_quantity'] ) ? $_POST['cart_quantity'] : 0;
-   $update_id       = ! empty( $_POST['cart_id'] ) ? $_POST['cart_id'] : '';
-   mysqli_query( $conn, "UPDATE cart SET quantity = '$update_quantity' WHERE id = '$update_id'" );
-   $message[] = 'updated cart';
+   $update_quantity = empty_check( $_POST['cart_quantity'], 0 );
+   $update_id       = empty_check( $_POST['cart_id'], 0 );
+
+   $updated_cart = mysqli_prepare( $connection, "UPDATE cart SET quantity = ? WHERE id = ?" );
+   mysqli_stmt_bind_param( $updated_cart, 'ii', $update_quantity, $update_id );
+
+   if ( mysqli_stmt_execute( $updated_cart ) ) {
+      $message[] = 'updated cart';
+   }
+   
 }
 
 if ( isset( $_GET['remove'] ) ) {
    $remove_id = $_GET['remove'];
-   mysqli_query( $conn, "DELETE FROM cart WHERE id = '$remove_id'");
-   $message[] = 'Removed cart';
+   
+   $remove_cart = mysqli_prepare( $connection, "DELETE FROM cart WHERE id = ?" );
+   mysqli_stmt_bind_param( $remove_cart, 'i', $remove_id );
+
+   if ( mysqli_stmt_execute( $remove_cart ) ) {
+      $message[] = 'Removed cart';
+   }
+   
 }
 
 if( isset(  $_GET['delete_all'] ) ) {
-   mysqli_query( $conn, "DELETE FROM cart WHERE user_id = '$user_id'");
-   header('location:index.php');
-}
+   mysqli_query( $connection, "DELETE FROM cart WHERE user_id = '$user_id'");
 
+   $delete_all = mysqli_prepare( $connection, "DELETE FROM cart WHERE user_id = ?" );
+   mysqli_stmt_bind_param( $delete_all, 'i', $remove_id );
 
-?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-   <meta charset="UTF-8">
-   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title>shopping cart</title>
-
-   <!-- custom css file link  -->
-   <link rel="stylesheet" href="css/style.css">
-
-</head>
-<body>
-   
-<?php
-if(isset($message)){
-   foreach($message as $message){
-      echo '<div class="message" onclick="this.remove();">'.$message.'</div>';
+   if ( mysqli_stmt_execute( $delete_all ) ) {
+      redirect( 'index.php' );
    }
+   
 }
 ?>
 
 <div class="container">
 
 <div class="user-profile">
-   <?php 
-   $select_user = mysqli_query( $conn, "SELECT * FROM user_form WHERE id='$user_id'" );
-   if( mysqli_num_rows( $select_user ) > 0 ) {
-      $fetch_user = mysqli_fetch_assoc( $select_user );
+   <?php
+   $select_user = mysqli_prepare( $connection, "SELECT * FROM user_form WHERE id = ?" );
+   mysqli_stmt_bind_param( $select_user, 'i', $user_id );
+   mysqli_stmt_execute( $select_user );
+   mysqli_stmt_execute( $select_user );
+
+   $result_select_user = mysqli_stmt_get_result( $select_user );
+
+   if ( mysqli_num_rows( $result_select_user ) > 0 ) {
+      mysqli_stmt_close( $select_user );
+      $fetch_user = mysqli_fetch_assoc( $result_select_user );
    }
    ?>
    <p> username : <span><?php echo $fetch_user['name']; ?></span> </p>
@@ -96,11 +118,15 @@ if(isset($message)){
    <h1 class="heading">latest products</h1>
 
    <div class="box-container">
-      <?php 
-         $select_product = mysqli_query( $conn, "SELECT * FROM products");
-         if( mysqli_num_rows( $select_product ) > 0 ) {
+      <?php
+         $select_product = mysqli_prepare( $connection, "SELECT * FROM products" );
+         mysqli_stmt_execute( $select_product );
+         mysqli_stmt_execute( $select_product );
+
+         $result_select_product = mysqli_stmt_get_result( $select_product );
+         if( mysqli_num_rows( $result_select_product ) > 0 ) {
             
-            while( $fetch_product = mysqli_fetch_array( $select_product ) ) {
+            while( $fetch_product = mysqli_fetch_array( $result_select_product ) ) {
         
       ?>
 
@@ -138,10 +164,16 @@ if(isset($message)){
       </thead>
       <tbody>
          <?php 
-            $cart_query = mysqli_query( $conn, "SELECT * FROM cart WHERE user_id = '$user_id'");
 
-            if( mysqli_num_rows( $cart_query ) > 0 ) {
-               while( $fetch_cart = mysqli_fetch_assoc( $cart_query ) ) {
+            $cart_query = mysqli_prepare( $connection, "SELECT * FROM cart WHERE user_id = ?" );
+            mysqli_stmt_bind_param( $cart_query, 'i', $user_id );
+            mysqli_stmt_execute( $cart_query );
+            mysqli_stmt_execute( $cart_query );
+
+            $result_cart_query = mysqli_stmt_get_result( $cart_query );
+
+            if( mysqli_num_rows( $result_cart_query ) > 0 ) {
+               while( $fetch_cart = mysqli_fetch_assoc( $result_cart_query ) ) {
             
          ?>
          <tr>
@@ -155,7 +187,7 @@ if(isset($message)){
                   <input type="submit" name="update_cart" value="update" class="option-btn">
                </form>
             </td>
-            <td>$<?php echo $sub_total =  number_format( $fetch_cart['price'] * $fetch_cart['quantity'] ); ?>/-</td>
+            <td>$<?php echo $sub_total =  calculate_cart( $fetch_cart['price'], $fetch_cart['quantity'] ); ?>/-</td>
             <td><a href="index.php?remove=<?php echo $fetch_cart['id']; ?>" class="delete-btn" onclick="return confirm('remove item from cart?');">remove</a></td>
          </tr>
       <?php 
@@ -165,7 +197,7 @@ if(isset($message)){
       ?>
       <tr class="table-bottom">
          <td colspan="4">grand total :</td>
-         <td>$<?php echo ! empty( $grand_total ) ? $grand_total : 0; ?>/-</td>
+         <td>$<?php echo empty_check( $grand_total, 0 )?>/-</td>
          <td><a href="index.php?delete_all" onclick="return confirm('delete all from cart?');" class="delete-btn">delete all</a></td>
       </tr>
    </tbody>
@@ -179,5 +211,4 @@ if(isset($message)){
 
 </div>
 
-</body>
-</html>
+<?php require_once 'partials/footer.php'; ?>
